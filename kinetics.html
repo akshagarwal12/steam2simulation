@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chemical Kinetics — Reaction Simulator</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --paper: #f5f0e8;
+    --paper2: #ede7d9;
+    --paper3: #e2dace;
+    --ink: #1a1409;
+    --ink2: #4a3f2e;
+    --ink3: #7a6e5e;
+    --rule: #c8bfaa;
+    --accent-a: #1a4a7a;
+    --accent-b: #7a1a1a;
+    --accent-p: #1a5a2a;
+    --accent-r: #7a5a0a;
+    --vessel-bg: #0d1117;
+    --vessel-rule: #1e2632;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+  }
+
+  /* Ruled paper texture */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      repeating-linear-gradient(
+        transparent,
+        transparent 27px,
+        var(--rule) 27px,
+        var(--rule) 28px
+      );
+    opacity: 0.35;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Left margin line */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0; bottom: 0;
+    left: 72px;
+    width: 1px;
+    background: #d4a0a0;
+    opacity: 0.5;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .page {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 28px 28px 88px;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    border-bottom: 1.5px solid var(--ink2);
+    padding-bottom: 10px;
+    margin-bottom: 22px;
+  }
+
+  .header-title {
+    font-family: 'IM Fell English', serif;
+    font-size: 26px;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    line-height: 1;
+  }
+
+  .header-sub {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--ink3);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .header-meta {
+    text-align: right;
+    font-size: 10px;
+    color: var(--ink3);
+    letter-spacing: 0.06em;
+  }
+
+  /* Equation band */
+  .eq-band {
+    background: var(--paper2);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--ink2);
+    padding: 10px 16px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .eq-label {
+    font-size: 10px;
+    color: var(--ink3);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  .eq-formula {
+    font-family: 'IM Fell English', serif;
+    font-size: 18px;
+    color: var(--ink);
+  }
+
+  .eq-formula .sp-a { color: var(--accent-a); }
+  .eq-formula .sp-b { color: var(--accent-b); }
+  .eq-formula .sp-p { color: var(--accent-p); }
+
+  .eq-rate {
+    font-size: 12px;
+    color: var(--ink2);
+    font-style: italic;
+    margin-left: auto;
+  }
+
+  /* Main layout */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 18px;
+    align-items: start;
+  }
+
+  /* Vessel */
+  .vessel-wrap {
+    position: relative;
+    border: 1px solid var(--ink2);
+    background: var(--vessel-bg);
+    overflow: hidden;
+  }
+
+  .vessel-label {
+    position: absolute;
+    top: 8px; left: 10px;
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #3a4a5a;
+    z-index: 2;
+  }
+
+  .vessel-label-right {
+    position: absolute;
+    top: 8px; right: 10px;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    color: #3a4a5a;
+    z-index: 2;
+    text-align: right;
+  }
+
+  canvas#vessel {
+    display: block;
+    width: 100%;
+  }
+
+  /* Grid lines inside vessel */
+  .vessel-overlay {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--vessel-rule) 1px, transparent 1px),
+      linear-gradient(90deg, var(--vessel-rule) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    opacity: 0.5;
+    z-index: 1;
+  }
+
+  /* Chart section */
+  .chart-section {
+    margin-top: 14px;
+    border: 1px solid var(--rule);
+    border-top: 2px solid var(--ink2);
+    background: var(--paper2);
+  }
+
+  .chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .chart-title {
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink2);
+  }
+
+  .legend {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+  }
+
+  .leg-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 9px;
+    color: var(--ink3);
+    letter-spacing: 0.06em;
+  }
+
+  .leg-line {
+    width: 16px;
+    height: 2px;
+    flex-shrink: 0;
+  }
+
+  canvas#chart {
+    display: block;
+    width: 100%;
+  }
+
+  /* Right panel */
+  .right-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* Stats */
+  .stats-box {
+    border: 1px solid var(--rule);
+    border-top: 2px solid var(--ink2);
+    background: var(--paper2);
+  }
+
+  .stats-header {
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--rule);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink2);
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .stat-cell {
+    padding: 10px 12px;
+    border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .stat-cell:nth-child(even) { border-right: none; }
+  .stat-cell:nth-last-child(-n+2) { border-bottom: none; }
+
+  .stat-name {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink3);
+    margin-bottom: 4px;
+  }
+
+  .stat-number {
+    font-size: 22px;
+    font-weight: 500;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stat-number.a { color: var(--accent-a); }
+  .stat-number.b { color: var(--accent-b); }
+  .stat-number.p { color: var(--accent-p); }
+  .stat-number.r { color: var(--accent-r); }
+
+  .stat-unit {
+    font-size: 9px;
+    color: var(--ink3);
+    margin-top: 2px;
+  }
+
+  /* Controls */
+  .ctrl-box {
+    border: 1px solid var(--rule);
+    border-top: 2px solid var(--ink2);
+    background: var(--paper2);
+  }
+
+  .ctrl-header {
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--rule);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink2);
+  }
+
+  .ctrl-body { padding: 10px 12px; }
+
+  .ctrl-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .ctrl-row:last-child { margin-bottom: 0; }
+
+  .ctrl-name {
+    font-size: 10px;
+    color: var(--ink2);
+    width: 80px;
+    flex-shrink: 0;
+    letter-spacing: 0.04em;
+  }
+
+  /* Custom range slider */
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: 3px;
+    background: var(--rule);
+    outline: none;
+    cursor: pointer;
+    border: none;
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--ink);
+    border: 2px solid var(--paper);
+    box-shadow: 0 0 0 1px var(--ink2);
+    cursor: pointer;
+  }
+
+  input[type=range]:focus::-webkit-slider-thumb {
+    box-shadow: 0 0 0 2px var(--ink2);
+  }
+
+  .ctrl-val {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--ink);
+    min-width: 30px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Order selector */
+  .order-btns {
+    display: flex;
+    flex: 1;
+    gap: 3px;
+  }
+
+  .ord-btn {
+    flex: 1;
+    padding: 4px 0;
+    font-size: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.06em;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    color: var(--ink3);
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+  }
+
+  .ord-btn:hover { background: var(--paper3); color: var(--ink); }
+  .ord-btn.active {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+
+  /* Ea bar */
+  .ea-track {
+    flex: 1;
+    height: 14px;
+    position: relative;
+    background: linear-gradient(90deg, var(--accent-p), var(--accent-r), var(--accent-b));
+    border: 1px solid var(--rule);
+    cursor: pointer;
+    opacity: 0.85;
+  }
+
+  .ea-thumb {
+    position: absolute;
+    top: -3px;
+    width: 6px;
+    height: 20px;
+    background: var(--ink);
+    transform: translateX(-50%);
+    cursor: ew-resize;
+    pointer-events: none;
+  }
+
+  /* Action buttons */
+  .action-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .btn {
+    flex: 1;
+    padding: 8px 0;
+    font-size: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: var(--paper);
+    border: 1px solid var(--ink2);
+    color: var(--ink);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn:hover { background: var(--paper3); }
+
+  .btn.active {
+    background: var(--ink);
+    color: var(--paper);
+  }
+
+  /* Half-life display */
+  .halflife-box {
+    border: 1px solid var(--rule);
+    background: var(--paper2);
+    padding: 10px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .halflife-label {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink3);
+  }
+
+  .halflife-val {
+    font-family: 'IM Fell English', serif;
+    font-size: 22px;
+    color: var(--ink);
+  }
+
+  /* Footnote */
+  .footnote {
+    margin-top: 18px;
+    padding-top: 8px;
+    border-top: 1px solid var(--rule);
+    font-size: 9px;
+    color: var(--ink3);
+    letter-spacing: 0.05em;
+    font-style: italic;
+  }
+
+  /* Tick marks on side */
+  .tick-col {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 72px;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div>
+      <div class="header-title">Chemical Kinetics Simulator</div>
+      <div class="header-sub" style="margin-top:4px;">Reaction Rate Analysis · Second-Order Kinetics</div>
+    </div>
+    <div class="header-meta">
+      <div>Exp. No. 001</div>
+      <div id="clock" style="margin-top:2px;"></div>
+      <div style="margin-top:2px;">t = <span id="time-counter">0.0</span>s</div>
+    </div>
+  </div>
+
+  <div class="eq-band">
+    <span class="eq-label">Reaction</span>
+    <span class="eq-formula">
+      <span class="sp-a">A</span> + <span class="sp-b">B</span> → <span class="sp-p">P</span>
+    </span>
+    <span class="eq-rate">rate = k[A]<sup>m</sup>[B]<sup>n</sup></span>
+    <span class="eq-rate" style="margin-left:0;font-style:normal;font-size:11px;">
+      k = <span id="k-display">—</span>
+    </span>
+  </div>
+
+  <div class="main-grid">
+    <!-- Left column -->
+    <div>
+      <div class="vessel-wrap">
+        <div class="vessel-label">Reaction Vessel</div>
+        <div class="vessel-label-right" id="temp-readout">T = 3.0</div>
+        <div class="vessel-overlay"></div>
+        <canvas id="vessel" width="640" height="360"></canvas>
+      </div>
+
+      <div class="chart-section">
+        <div class="chart-header">
+          <span class="chart-title">Concentration vs. Time</span>
+          <div class="legend">
+            <div class="leg-item"><div class="leg-line" style="background:#2a6ab0;"></div>[A]</div>
+            <div class="leg-item"><div class="leg-line" style="background:#b03030;"></div>[B]</div>
+            <div class="leg-item"><div class="leg-line" style="background:#2a7a3a;"></div>[P]</div>
+            <div class="leg-item"><div class="leg-line" style="background:#a07010;border-top:2px dashed #a07010;height:0;"></div>rate</div>
+          </div>
+        </div>
+        <canvas id="chart" width="640" height="150"></canvas>
+      </div>
+    </div>
+
+    <!-- Right panel -->
+    <div class="right-panel">
+
+      <div class="stats-box">
+        <div class="stats-header">Live Concentrations</div>
+        <div class="stats-grid">
+          <div class="stat-cell">
+            <div class="stat-name">[A] Reactant</div>
+            <div class="stat-number a" id="va">25</div>
+            <div class="stat-unit">mol · L⁻¹</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-name">[B] Reactant</div>
+            <div class="stat-number b" id="vb">25</div>
+            <div class="stat-unit">mol · L⁻¹</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-name">[P] Product</div>
+            <div class="stat-number p" id="vp">0</div>
+            <div class="stat-unit">mol · L⁻¹</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-name">Rate</div>
+            <div class="stat-number r" id="vr">—</div>
+            <div class="stat-unit">mol · L⁻¹ · s⁻¹</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ctrl-box">
+        <div class="ctrl-header">Parameters</div>
+        <div class="ctrl-body">
+          <div class="ctrl-row">
+            <span class="ctrl-name">Temperature</span>
+            <input type="range" id="sl-temp" min="1" max="10" step="0.1" value="3">
+            <span class="ctrl-val" id="lbl-temp">3.0</span>
+          </div>
+          <div class="ctrl-row">
+            <span class="ctrl-name">Init. [A]</span>
+            <input type="range" id="sl-a" min="5" max="60" step="1" value="25">
+            <span class="ctrl-val" id="lbl-a">25</span>
+          </div>
+          <div class="ctrl-row">
+            <span class="ctrl-name">Init. [B]</span>
+            <input type="range" id="sl-b" min="5" max="60" step="1" value="25">
+            <span class="ctrl-val" id="lbl-b">25</span>
+          </div>
+          <div class="ctrl-row">
+            <span class="ctrl-name">Ea Factor</span>
+            <input type="range" id="sl-ea" min="1" max="10" step="0.5" value="4">
+            <span class="ctrl-val" id="lbl-ea">4.0</span>
+          </div>
+          <div class="ctrl-row" style="margin-top:2px;">
+            <span class="ctrl-name">Rxn. Order</span>
+            <div class="order-btns">
+              <button class="ord-btn" data-order="1">1st</button>
+              <button class="ord-btn active" data-order="2">2nd</button>
+              <button class="ord-btn" data-order="3">3rd</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="halflife-box">
+        <span class="halflife-label">Half-life t<sub>½</sub></span>
+        <span class="halflife-val"><span id="vt">—</span> <span style="font-size:13px;color:var(--ink3);">s</span></span>
+      </div>
+
+      <div class="action-row">
+        <button class="btn" id="btn-pause">Pause</button>
+        <button class="btn" id="btn-reset">Reset</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="footnote">
+    Simulation uses elastic collision model with stochastic reaction probability proportional to k = T/Ea × 0.04.
+    Particle velocities follow Maxwell-Boltzmann speed distribution at given temperature.
+  </div>
+
+</div>
+
+<script>
+const vc = document.getElementById('vessel');
+const vctx = vc.getContext('2d');
+const cc = document.getElementById('chart');
+const cctx = cc.getContext('2d');
+
+let W = 640, H = 360;
+let particles = [];
+let paused = false;
+let t = 0, lastHistT = 0;
+let history = { t:[], a:[], b:[], p:[], r:[] };
+const MAX_HIST = 300;
+
+let params = { T: 3, nA: 25, nB: 25, order: 2, ea: 4 };
+
+function getK() {
+  return (params.T / params.ea) * 0.04;
+}
+
+function mkParticle(type) {
+  const speed = params.T * 1.4;
+  const angle = Math.random() * Math.PI * 2;
+  return {
+    x: 12 + Math.random() * (W - 24),
+    y: 12 + Math.random() * (H - 24),
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
+    r: 5, type, age: 0
+  };
+}
+
+function init() {
+  particles = [];
+  for (let i = 0; i < params.nA; i++) particles.push(mkParticle('A'));
+  for (let i = 0; i < params.nB; i++) particles.push(mkParticle('B'));
+  t = 0; lastHistT = 0;
+  history = { t:[], a:[], b:[], p:[], r:[] };
+  if (chartObj) {
+    chartObj.data.labels = [];
+    chartObj.data.datasets.forEach(d => d.data = []);
+    chartObj.update('none');
+  }
+}
+
+function counts() {
+  let a=0, b=0, p=0;
+  for (const p2 of particles) {
+    if (p2.type==='A') a++;
+    else if (p2.type==='B') b++;
+    else p++;
+  }
+  return {a,b,p};
+}
+
+function collide(p1, p2) {
+  const dx=p2.x-p1.x, dy=p2.y-p1.y;
+  const d=Math.sqrt(dx*dx+dy*dy);
+  if (d < p1.r+p2.r && d > 0.001) {
+    const nx=dx/d, ny=dy/d;
+    const overlap=(p1.r+p2.r-d)/2;
+    p1.x-=nx*overlap; p1.y-=ny*overlap;
+    p2.x+=nx*overlap; p2.y+=ny*overlap;
+    const v1n=p1.vx*nx+p1.vy*ny;
+    const v2n=p2.vx*nx+p2.vy*ny;
+    p1.vx+=(v2n-v1n)*nx; p1.vy+=(v2n-v1n)*ny;
+    p2.vx+=(v1n-v2n)*nx; p2.vy+=(v1n-v2n)*ny;
+    return true;
+  }
+  return false;
+}
+
+function tryReact(p1, p2) {
+  if ((p1.type==='A'&&p2.type==='B')||(p1.type==='B'&&p2.type==='A')) {
+    if (Math.random() < Math.min(1, getK() * 0.8)) {
+      p1.type='P'; p1.age=0;
+      p2.type='P'; p2.age=0;
+    }
+  }
+}
+
+let chartObj = null;
+
+function updateStats() {
+  const c = counts();
+  const k = getK();
+  let rate = 0;
+  if (params.order===1) rate = k*c.a;
+  else if (params.order===2) rate = k*c.a*c.b/100;
+  else rate = k*c.a*c.b*Math.min(c.a,c.b)/10000;
+
+  document.getElementById('va').textContent = c.a;
+  document.getElementById('vb').textContent = c.b;
+  document.getElementById('vp').textContent = c.p;
+  document.getElementById('vr').textContent = rate.toFixed(3);
+  document.getElementById('k-display').textContent = k.toFixed(4);
+  document.getElementById('time-counter').textContent = t.toFixed(1);
+  document.getElementById('temp-readout').textContent = 'T = ' + params.T.toFixed(1);
+
+  const totalInit = params.nA + params.nB;
+  const halflife = c.a > 0
+    ? (1 / (k * Math.max(1, c.b/totalInit*params.nB))).toFixed(1)
+    : '∞';
+  document.getElementById('vt').textContent = halflife;
+
+  history.t.push(parseFloat(t.toFixed(1)));
+  history.a.push(c.a);
+  history.b.push(c.b);
+  history.p.push(c.p);
+  history.r.push(parseFloat(rate.toFixed(3)));
+  if (history.t.length > MAX_HIST) {
+    history.t.shift(); history.a.shift(); history.b.shift(); history.p.shift(); history.r.shift();
+  }
+
+  if (!chartObj) {
+    Chart.defaults.font.family = "'IBM Plex Mono', monospace";
+    Chart.defaults.font.size = 9;
+    chartObj = new Chart(cctx, {
+      type: 'line',
+      data: {
+        labels: history.t,
+        datasets: [
+          { label:'[A]', data:[...history.a], borderColor:'#2a6ab0', borderWidth:1.5, pointRadius:0, tension:0.3, yAxisID:'y' },
+          { label:'[B]', data:[...history.b], borderColor:'#b03030', borderWidth:1.5, pointRadius:0, tension:0.3, yAxisID:'y' },
+          { label:'[P]', data:[...history.p], borderColor:'#2a7a3a', borderWidth:1.5, pointRadius:0, tension:0.3, yAxisID:'y' },
+          { label:'rate', data:[...history.r], borderColor:'#a07010', borderWidth:1, borderDash:[4,3], pointRadius:0, tension:0.3, yAxisID:'y2' }
+        ]
+      },
+      options: {
+        animation: false,
+        responsive: false,
+        plugins: { legend:{display:false}, tooltip:{enabled:false} },
+        scales: {
+          x: {
+            display: true,
+            ticks: { color:'#7a6e5e', maxTicksLimit:8 },
+            grid: { color:'#c8bfaa55' },
+            border: { color: '#c8bfaa' }
+          },
+          y: {
+            position: 'left',
+            ticks: { color:'#7a6e5e' },
+            grid: { color:'#c8bfaa55' },
+            border: { color: '#c8bfaa' },
+            min: 0
+          },
+          y2: {
+            position: 'right',
+            ticks: { color:'#a07010' },
+            grid: { drawOnChartArea: false },
+            border: { color: '#c8bfaa' },
+            min: 0
+          }
+        }
+      }
+    });
+  } else {
+    chartObj.data.labels = [...history.t];
+    chartObj.data.datasets[0].data = [...history.a];
+    chartObj.data.datasets[1].data = [...history.b];
+    chartObj.data.datasets[2].data = [...history.p];
+    chartObj.data.datasets[3].data = [...history.r];
+    chartObj.update('none');
+  }
+}
+
+// Particle colors (on dark vessel)
+const colorMap = { A:'#4a9edd', B:'#dd4a4a', P:'#4add6a' };
+const trailMap  = { A:'#4a9edd22', B:'#dd4a4a22', P:'#4add6a22' };
+
+function drawVessel() {
+  vctx.clearRect(0,0,W,H);
+  for (const p of particles) {
+    // Outer glow
+    vctx.beginPath();
+    vctx.arc(p.x, p.y, p.r+4, 0, Math.PI*2);
+    vctx.fillStyle = trailMap[p.type]||'#fff1';
+    vctx.fill();
+    // Core
+    vctx.beginPath();
+    vctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+    vctx.fillStyle = colorMap[p.type]||'#fff';
+    vctx.fill();
+  }
+}
+
+function step(dt) {
+  const speed = params.T * 1.4;
+  for (const p of particles) {
+    p.x += p.vx * dt * 60;
+    p.y += p.vy * dt * 60;
+    if (p.x < p.r) { p.x=p.r; p.vx=Math.abs(p.vx); }
+    if (p.x > W-p.r) { p.x=W-p.r; p.vx=-Math.abs(p.vx); }
+    if (p.y < p.r) { p.y=p.r; p.vy=Math.abs(p.vy); }
+    if (p.y > H-p.r) { p.y=H-p.r; p.vy=-Math.abs(p.vy); }
+    const s = Math.sqrt(p.vx*p.vx+p.vy*p.vy);
+    if (s>0) { p.vx=p.vx/s*speed; p.vy=p.vy/s*speed; }
+  }
+  for (let i=0; i<particles.length; i++) {
+    for (let j=i+1; j<particles.length; j++) {
+      if (collide(particles[i], particles[j])) {
+        tryReact(particles[i], particles[j]);
+      }
+    }
+  }
+  t += dt;
+  if (t - lastHistT > 0.3) { lastHistT = t; updateStats(); }
+}
+
+let last = null;
+function loop(ts) {
+  if (!last) last = ts;
+  const dt = Math.min((ts-last)/1000, 0.05);
+  last = ts;
+  if (!paused) step(dt);
+  drawVessel();
+  requestAnimationFrame(loop);
+}
+
+// Clock
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// Sliders
+document.getElementById('sl-temp').addEventListener('input', function() {
+  params.T = parseFloat(this.value);
+  document.getElementById('lbl-temp').textContent = params.T.toFixed(1);
+});
+document.getElementById('sl-a').addEventListener('input', function() {
+  params.nA = parseInt(this.value);
+  document.getElementById('lbl-a').textContent = this.value;
+  init();
+});
+document.getElementById('sl-b').addEventListener('input', function() {
+  params.nB = parseInt(this.value);
+  document.getElementById('lbl-b').textContent = this.value;
+  init();
+});
+document.getElementById('sl-ea').addEventListener('input', function() {
+  params.ea = parseFloat(this.value);
+  document.getElementById('lbl-ea').textContent = params.ea.toFixed(1);
+});
+
+// Order buttons
+document.querySelectorAll('.ord-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.ord-btn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    params.order = parseInt(this.dataset.order);
+  });
+});
+
+// Action buttons
+document.getElementById('btn-pause').addEventListener('click', function() {
+  paused = !paused;
+  this.textContent = paused ? 'Resume' : 'Pause';
+  this.classList.toggle('active', paused);
+});
+document.getElementById('btn-reset').addEventListener('click', init);
+
+init();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
